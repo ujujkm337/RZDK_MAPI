@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Навигатор РЖДК Уссурийск</title>
+    <script src="https://api-maps.yandex.ru/2.1/?apikey=be0c8369-7476-47a3-a315-59ab429fadcb&lang=ru_RU" type="text/javascript"></script>
+    <style>
+        /* Весь твой CSS */
+    </style>
+</head>
+<body>
+    <!-- Весь твой HTML -->
+    
+    <!-- Добавляем скрытый блок для управления данными -->
+    <div id="data-manager" style="display: none; position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.8); padding: 10px; border-radius: 5px; z-index: 1000;">
+        <input type="text" id="gist-id-input" placeholder="Gist ID" style="width: 150px; padding: 5px;">
+        <button onclick="loadData()" style="padding: 5px 10px; margin-left: 5px;">Загрузить</button>
+    </div>
+</body>
+<script>
+// Конфигурация - ЗАМЕНИ ЭТОТ ID НА СВОЙ
+const DEFAULT_GIST_ID = 'a1b2c3d4e5f6g7h8i9j0'; // Замени на реальный Gist ID
+
+let map;
+let buildings = {};
+let classrooms = { floors: {} };
+let drawings = { polylines: { floors: {} }, polygons: { floors: {} } };
+let currentBuildingIndex = 0;
+let buildingIds = [];
+let currentFloor = 1;
+
+// Функция загрузки данных
+async function loadMapData() {
+    // Сначала пробуем загрузить из Gist
+    try {
+        const gistId = localStorage.getItem('rzdk_gist_id') || DEFAULT_GIST_ID;
+        const data = await loadFromGist(gistId);
+        if (data) {
+            console.log('Данные загружены из Gist');
+            return data;
+        }
+    } catch (error) {
+        console.log('Не удалось загрузить из Gist:', error);
+    }
+    
+    // Если не получилось, пробуем локальные данные
+    try {
+        const localData = localStorage.getItem('rzdk_map_data');
+        if (localData) {
+            console.log('Данные загружены из localStorage');
+            return JSON.parse(localData);
+        }
+    } catch (error) {
+        console.log('Ошибка локальных данных:', error);
+    }
+    
+    // Если ничего нет, возвращаем данные по умолчанию
+    console.log('Используются данные по умолчанию');
+    return getDefaultData();
+}
+
+async function loadFromGist(gistId) {
+    if (!gistId) return null;
+    
+    const urls = [
+        `https://api.github.com/gists/${gistId}`,
+        `https://gist.githubusercontent.com/raw/${gistId}`,
+        `https://gist.github.com/${gistId}/raw`
+    ];
+
+    for (const url of urls) {
+        try {
+            const response = await fetch(url);
+            if (response.ok) {
+                let data;
+                if (url.includes('api.github.com')) {
+                    const result = await response.json();
+                    data = result.files[Object.keys(result.files)[0]].content;
+                } else {
+                    data = await response.text();
+                }
+                return JSON.parse(data);
+            }
+        } catch (error) {
+            continue;
+        }
+    }
+    return null;
+}
+
+function getDefaultData() {
+    return {
+        mainBuilding: 'educational',
+        buildings: {
+            'master': {
+                name: 'Учебно-производственные мастерские',
+                address: 'ул. Тургенева 15',
+                phone: '8 (4234) 38-10-86',
+                coords: [43.8015, 131.9578]
+            },
+            'dormitory': {
+                name: 'Колледж РЖДК',
+                address: 'ул. Суханова 66', 
+                phone: '8 (4234) 32-15-45',
+                coords: [43.8030, 131.9550]
+            },
+            'educational': {
+                name: 'Учебный корпус',
+                address: 'ул. Горького 15',
+                phone: '8 (4234) 32-07-31',
+                coords: [43.790882, 131.944252]
+            },
+            'main': {
+                name: 'Главный учебный корпус',
+                address: 'ул. Чичерина 146',
+                phone: '+7 (4234) 354738',
+                coords: [43.7990, 131.9600]
+            }
+        },
+        classrooms: { floors: {} },
+        drawings: {
+            polylines: { floors: {} },
+            polygons: { floors: {} }
+        }
+    };
+}
+
+// Функция для ручной загрузки данных (для отладки)
+async function loadData() {
+    const gistId = document.getElementById('gist-id-input').value || DEFAULT_GIST_ID;
+    localStorage.setItem('rzdk_gist_id', gistId);
+    location.reload();
+}
+
+ymaps.ready(async function() {
+    const data = await loadMapData();
+    initMap(data);
+});
+
+function initMap(data) {
+    buildings = data.buildings || {};
+    classrooms = data.classrooms || {};
+    drawings = data.drawings || {};
+    buildingIds = Object.keys(buildings);
+
+    const mainBuildingId = data.mainBuilding || 'educational';
+    const mainBuilding = buildings[mainBuildingId] || (buildingIds.length > 0 ? buildings[buildingIds[0]] : null);
+    const initialCoords = mainBuilding ? mainBuilding.coords : [43.790882, 131.944252];
+
+    map = new ymaps.Map('map', {
+        center: initialCoords,
+        zoom: 17,
+        controls: ['zoomControl', 'fullscreenControl']
+    }, {
+        suppressMapOpenBlock: true
+    });
+
+    loadBuildings();
+    loadFloorData(currentFloor);
+    updateMobileNavigation();
+    updateFloorButtons();
+
+    // Обработчики событий...
+}
+
+// Остальные функции (loadBuildings, changeFloor, etc.) остаются без изменений
+</script>
+</html>
